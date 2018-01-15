@@ -1,6 +1,8 @@
 from Executor import Executor
+from TaskActor import TaskActor
 from Collector import Collector
-from RDD import RDD
+from Scheduler import Scheduler
+from RDD import RDD, TextRDD
 import time
 import logging
 
@@ -12,8 +14,11 @@ class SparkContext:
         self._num_executors = 0
         self._collector_ready = False
         self._res_list= []
+        self._scheduler = Scheduler()
         self._logger = logging.getLogger("SparkContext")
 
+    def read(self, path_list):
+        return TextRDD(self, path_list)
     def text(self, path_list):
         if path_list is None or len(path_list) == 0:
             return None
@@ -54,6 +59,17 @@ class SparkContext:
     def stop(self):
         self._logger.info("stopping all executors")
         [e.stop() for e in self._executors]
+
+    def run_tasks(self, rdd):
+        dag = self._scheduler.run(rdd)
+        header = dag[0]
+        n_tasks = header._n_split
+        self._logger.info("init {num} task actors".format(num=n_tasks))
+        task_actors = [TaskActor.start() for _ in range(n_tasks)]
+        for idx, path in enumerate(rdd._split):
+            task_actors[idx].tell({'type': 'init', 'func': rdd._func, 'para': path})
+        return RDD(self)
+
 
 
 if __name__ == "__main__":
